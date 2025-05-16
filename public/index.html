@@ -29,16 +29,21 @@
     const localVideo = document.getElementById('localVideo');
     const remoteVideo = document.getElementById('remoteVideo');
 
-    const peer = new RTCPeerConnection({
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' }
-  ]
-});
     const socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+
+    const peer = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' }
+      ]
+    });
+
+    let isOfferer = false;
 
     socket.onmessage = async ({ data }) => {
       const msg = JSON.parse(data);
+
       if (msg.offer) {
+        isOfferer = false;
         await peer.setRemoteDescription(new RTCSessionDescription(msg.offer));
         const answer = await peer.createAnswer();
         await peer.setLocalDescription(answer);
@@ -64,10 +69,16 @@
       localVideo.srcObject = stream;
       stream.getTracks().forEach(track => peer.addTrack(track, stream));
 
-      peer.createOffer().then(offer => {
-        peer.setLocalDescription(offer);
-        socket.send(JSON.stringify({ offer }));
-      });
+      // ждем немного перед тем как стать инициатором
+      setTimeout(() => {
+        if (!isOfferer) {
+          isOfferer = true;
+          peer.createOffer().then(offer => {
+            peer.setLocalDescription(offer);
+            socket.send(JSON.stringify({ offer }));
+          });
+        }
+      }, 1000);
     });
   </script>
 </body>
