@@ -41,25 +41,27 @@
       console.log('[WS] Соединение установлено с signaling-сервером');
     };
 
-    socket.onmessage = async ({ data }) => {
-      const msg = JSON.parse(data);
+    socket.onmessage = async (event) => {
+  const text = await event.data.text(); // 👈 Преобразуем Blob в строку
+  const msg = JSON.parse(text);         // 👈 Теперь можно парсить
+  console.log('[WS] Получено сообщение:', msg);
 
-      if (msg.offer) {
-        console.log('[WS] Получен offer');
-        isOfferer = false;
-        await peer.setRemoteDescription(new RTCSessionDescription(msg.offer));
-        const answer = await peer.createAnswer();
-        await peer.setLocalDescription(answer);
-        socket.send(JSON.stringify({ answer }));
-        console.log('[RTC] Отправлен answer');
-      } else if (msg.answer) {
-        console.log('[WS] Получен answer');
-        await peer.setRemoteDescription(new RTCSessionDescription(msg.answer));
-      } else if (msg.ice) {
-        console.log('[WS] Получен ICE-кандидат');
-        await peer.addIceCandidate(msg.ice);
-      }
-    };
+  if (msg.offer) {
+    console.log('[RTC] Получен offer');
+    isOfferer = false;
+    await peer.setRemoteDescription(new RTCSessionDescription(msg.offer));
+    const answer = await peer.createAnswer();
+    await peer.setLocalDescription(answer);
+    socket.send(JSON.stringify({ answer }));
+    console.log('[RTC] Отправлен answer');
+  } else if (msg.answer) {
+    console.log('[RTC] Получен answer');
+    await peer.setRemoteDescription(new RTCSessionDescription(msg.answer));
+  } else if (msg.ice) {
+    console.log('[ICE] Получен ICE-кандидат');
+    await peer.addIceCandidate(msg.ice);
+  }
+};
 
     peer.onicecandidate = e => {
       if (e.candidate) {
