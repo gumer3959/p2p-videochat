@@ -25,88 +25,77 @@
 <body>
   <video id="localVideo" autoplay muted playsinline></video>
   <video id="remoteVideo" autoplay playsinline></video>
+
   <script>
-  const localVideo = document.getElementById('localVideo');
-  const remoteVideo = document.getElementById('remoteVideo');
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+    const socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
 
-  const socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+    const peer = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
 
-  const peer = new RTCPeerConnection({
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-  });
+    let isOfferer = true;
+    let isRemoteDescSet = false;
+    const iceQueue = [];
 
-  let isOfferer = true;
-  let isRemoteDescSet = false;
-  const iceQueue = [];
+    socket.onmessage = async (event) => {
+      const data = typeof event.data === 'string' ? event.data : await event.data.text();
+      const msg = JSON.parse(data);
+      console.log('[WS] Получено сообщение:', msg);
 
-  socket.onmessage = async (event) => {
-    const text = await event.data.text();
-    const msg = JSON.parse(text);
-    console.log('[WS] Получено сообщение:', msg);
-
-    if (msg.offer) {
-      console.log('[RTC] Получен offer');
-      isOfferer = false;
-      await peer.setRemoteDescription(new RTCSessionDescription(msg.offer));
-      isRemoteDescSet = true;
-      const answer = await peer.createAnswer();
-      await peer.setLocalDescription(answer);
-      socket.send(JSON.stringify({ answer }));
-      console.log('[RTC] Отправлен answer');
-
-      while (iceQueue.length > 0) {
-        await peer.addIceCandidate(iceQueue.shift());
-      }
-    } else if (msg.answer) {
-      console.log('[RTC] Получен answer');
-      await peer.setRemoteDescription(new RTCSessionDescription(msg.answer));
-      isRemoteDescSet = true;
-
-      while (iceQueue.length > 0) {
-        await peer.addIceCandidate(iceQueue.shift());
-      }
-    } else if (msg.ice) {
-      if (isRemoteDescSet) {
-        console.log('[ICE] Получен и применён ICE-кандидат');
-        await peer.addIceCandidate(msg.ice);
-      } else {
-        console.log('[ICE] ICE-кандидат сохранён в очередь');
-        iceQueue.push(msg.ice);
-      }
-    }
-  };
-
-  peer.onicecandidate = e => {
-    if (e.candidate) {
-      socket.send(JSON.stringify({ ice: e.candidate }));
-      console.log('[ICE] Отправлен ICE-кандидат');
-    }
-  };
-
-  peer.ontrack = e => {
-    console.log('[RTC] Получен медиапоток от другого клиента');
-    remoteVideo.srcObject = e.streams[0];
-  };
-
-  navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
-    localVideo.srcObject = stream;
-    stream.getTracks().forEach(track => peer.addTrack(track, stream));
-    console.log('[MEDIA] Получен локальный медиапоток');
-
-    const waitAndOffer = () => {
-      if (socket.readyState === WebSocket.OPEN && isOfferer) {
-        peer.createOffer().then(offer => {
-          peer.setLocalDescription(offer);
-          socket.send(JSON.stringify({ offer }));
-          console.log('[RTC] Отправлен offer');
-        });
-      } else {
-        setTimeout(waitAndOffer, 500);
+      if (msg.offer) {
+        isOfferer = false;
+        await peer.setRemoteDescription(new RTCSessionDescription(msg.offer));
+        isRemoteDescSet = true;
+        const answer = await peer.createAnswer();
+        await peer.setLocalDescription(answer);
+        socket.send(JSON.stringify({ answer }));
+        while (iceQueue.length > 0) {
+          await peer.addIceCandidate(iceQueue.shift());
+        }
+      } else if (msg.answer) {
+        await peer.setRemoteDescription(new RTCSessionDescription(msg.answer));
+        isRemoteDescSet = true;
+        while (iceQueue.length > 0) {
+          await peer.addIceCandidate(iceQueue.shift());
+        }
+      } else if (msg.ice) {
+        if (isRemoteDescSet) {
+          await peer.addIceCandidate(msg.ice);
+        } else {
+          iceQueue.push(msg.ice);
+        }
       }
     };
 
-    setTimeout(waitAndOffer, 1000);
-  });
-</script>
+    peer.onicecandidate = e => {
+      if (e.candidate) {
+        socket.send(JSON.stringify({ ice: e.candidate }));
+      }
+    };
+
+    peer.ontrack = e => {
+      remoteVideo.srcObject = e.streams[0];
+    };
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
+      localVideo.srcObject = stream;
+      stream.getTracks().forEach(track => peer.addTrack(track, stream));
+
+      const waitAndOffer = () => {
+        if (socket.readyState === WebSocket.OPEN && isOfferer) {
+          peer.createOffer().then(offer => {
+            peer.setLocalDescription(offer);
+            socket.send(JSON.stringify({ offer }));
+          });
+        } else {
+          setTimeout(waitAndOffer, 500);
+        }
+      };
+
+      setTimeout(waitAndOffer, 1000);
+    });
+  </script>
 </body>
 </html>
