@@ -2,6 +2,25 @@
 <html>
 <head>
   <title>P2P Video Chat</title>
+  <style>
+    video {
+      width: 48%;
+      margin: 1%;
+      border-radius: 12px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.2);
+    }
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 20px;
+      background: #f4f4f4;
+      height: 100vh;
+      margin: 0;
+      padding: 0;
+      font-family: sans-serif;
+    }
+  </style>
 </head>
 <body>
   <video id="localVideo" autoplay muted playsinline></video>
@@ -11,7 +30,7 @@
     const remoteVideo = document.getElementById('remoteVideo');
 
     const peer = new RTCPeerConnection();
-    const socket = new WebSocket('ws://localhost:3000');
+    const socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
 
     socket.onmessage = async ({ data }) => {
       const msg = JSON.parse(data);
