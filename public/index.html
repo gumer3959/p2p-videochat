@@ -35,55 +35,62 @@
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     });
 
-    let isOfferer = true; // по умолчанию — инициатор
+    let isOfferer = true;
 
     socket.onopen = () => {
-      console.log('[WebSocket] Connected to signaling server');
+      console.log('[WS] Соединение установлено с signaling-сервером');
     };
 
     socket.onmessage = async ({ data }) => {
       const msg = JSON.parse(data);
 
       if (msg.offer) {
+        console.log('[WS] Получен offer');
         isOfferer = false;
         await peer.setRemoteDescription(new RTCSessionDescription(msg.offer));
         const answer = await peer.createAnswer();
         await peer.setLocalDescription(answer);
         socket.send(JSON.stringify({ answer }));
+        console.log('[RTC] Отправлен answer');
       } else if (msg.answer) {
+        console.log('[WS] Получен answer');
         await peer.setRemoteDescription(new RTCSessionDescription(msg.answer));
       } else if (msg.ice) {
+        console.log('[WS] Получен ICE-кандидат');
         await peer.addIceCandidate(msg.ice);
       }
     };
 
     peer.onicecandidate = e => {
       if (e.candidate) {
+        console.log('[ICE] Отправка ICE-кандидата');
         socket.send(JSON.stringify({ ice: e.candidate }));
       }
     };
 
     peer.ontrack = e => {
+      console.log('[RTC] Получен медиапоток от другого клиента');
       remoteVideo.srcObject = e.streams[0];
     };
 
     navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
       localVideo.srcObject = stream;
       stream.getTracks().forEach(track => peer.addTrack(track, stream));
+      console.log('[MEDIA] Получен локальный медиапоток');
 
-      // Подождем, пока WebSocket откроется
       const waitAndOffer = () => {
         if (socket.readyState === WebSocket.OPEN && isOfferer) {
           peer.createOffer().then(offer => {
             peer.setLocalDescription(offer);
             socket.send(JSON.stringify({ offer }));
+            console.log('[RTC] Отправлен offer');
           });
         } else {
           setTimeout(waitAndOffer, 500);
         }
       };
 
-      setTimeout(waitAndOffer, 1000); // стартуем чуть позже
+      setTimeout(waitAndOffer, 1000);
     });
   </script>
 </body>
