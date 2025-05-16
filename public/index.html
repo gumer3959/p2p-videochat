@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>P2P Video Chat</title>
+</head>
+<body>
+  <video id="localVideo" autoplay muted playsinline></video>
+  <video id="remoteVideo" autoplay playsinline></video>
+  <script>
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+
+    const peer = new RTCPeerConnection();
+    const socket = new WebSocket('ws://localhost:3000');
+
+    socket.onmessage = async ({ data }) => {
+      const msg = JSON.parse(data);
+      if (msg.offer) {
+        await peer.setRemoteDescription(new RTCSessionDescription(msg.offer));
+        const answer = await peer.createAnswer();
+        await peer.setLocalDescription(answer);
+        socket.send(JSON.stringify({ answer }));
+      } else if (msg.answer) {
+        await peer.setRemoteDescription(new RTCSessionDescription(msg.answer));
+      } else if (msg.ice) {
+        await peer.addIceCandidate(msg.ice);
+      }
+    };
+
+    peer.onicecandidate = e => {
+      if (e.candidate) {
+        socket.send(JSON.stringify({ ice: e.candidate }));
+      }
+    };
+
+    peer.ontrack = e => {
+      remoteVideo.srcObject = e.streams[0];
+    };
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
+      localVideo.srcObject = stream;
+      stream.getTracks().forEach(track => peer.addTrack(track, stream));
+
+      peer.createOffer().then(offer => {
+        peer.setLocalDescription(offer);
+        socket.send(JSON.stringify({ offer }));
+      });
+    });
+  </script>
+</body>
+</html>
