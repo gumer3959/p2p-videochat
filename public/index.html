@@ -32,12 +32,14 @@
     const socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
 
     const peer = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' }
-      ]
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     });
 
-    let isOfferer = false;
+    let isOfferer = true; // по умолчанию — инициатор
+
+    socket.onopen = () => {
+      console.log('[WebSocket] Connected to signaling server');
+    };
 
     socket.onmessage = async ({ data }) => {
       const msg = JSON.parse(data);
@@ -69,16 +71,19 @@
       localVideo.srcObject = stream;
       stream.getTracks().forEach(track => peer.addTrack(track, stream));
 
-      // ждем немного перед тем как стать инициатором
-      setTimeout(() => {
-        if (!isOfferer) {
-          isOfferer = true;
+      // Подождем, пока WebSocket откроется
+      const waitAndOffer = () => {
+        if (socket.readyState === WebSocket.OPEN && isOfferer) {
           peer.createOffer().then(offer => {
             peer.setLocalDescription(offer);
             socket.send(JSON.stringify({ offer }));
           });
+        } else {
+          setTimeout(waitAndOffer, 500);
         }
-      }, 1000);
+      };
+
+      setTimeout(waitAndOffer, 1000); // стартуем чуть позже
     });
   </script>
 </body>
