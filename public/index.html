@@ -1,24 +1,24 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
-  <meta charset="UTF-8">
   <title>P2P Video Chat</title>
   <style>
+    video {
+      width: 48%;
+      margin: 1%;
+      border-radius: 12px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.2);
+    }
     body {
-      margin: 0;
-      padding: 0;
-      font-family: sans-serif;
-      background: #f4f4f4;
       display: flex;
       justify-content: center;
       align-items: center;
-      height: 100vh;
       gap: 20px;
-    }
-    video {
-      width: 48%;
-      border-radius: 12px;
-      box-shadow: 0 0 15px rgba(0,0,0,0.2);
+      background: #f4f4f4;
+      height: 100vh;
+      margin: 0;
+      padding: 0;
+      font-family: sans-serif;
     }
   </style>
 </head>
@@ -35,34 +35,16 @@
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     });
 
-    let isOfferer = false;
+    let isOfferer = true;
     let isRemoteDescSet = false;
     const iceQueue = [];
 
-    // ICE -> Signaling server
-    peer.onicecandidate = (e) => {
-      if (e.candidate) {
-        socket.send(JSON.stringify({ ice: e.candidate }));
-        console.log('[ICE] Отправлен кандидат');
-      }
-    };
-
-    // Получение remote stream
-    peer.ontrack = (e) => {
-      if (e.streams && e.streams[0]) {
-        remoteVideo.srcObject = e.streams[0];
-        console.log('[RTC] Установлен remoteVideo');
-      }
-    };
-
-    // Получение сообщений
     socket.onmessage = async (event) => {
       const data = typeof event.data === 'string' ? event.data : await event.data.text();
       const msg = JSON.parse(data);
-      console.log('[WS] Получено:', msg);
 
       if (msg.offer) {
-        console.log('[RTC] Получен offer');
+        isOfferer = false;
         await peer.setRemoteDescription(new RTCSessionDescription(msg.offer));
         isRemoteDescSet = true;
         const answer = await peer.createAnswer();
@@ -73,43 +55,51 @@
           await peer.addIceCandidate(iceQueue.shift());
         }
       } else if (msg.answer) {
-        console.log('[RTC] Получен answer');
         await peer.setRemoteDescription(new RTCSessionDescription(msg.answer));
         isRemoteDescSet = true;
-
         while (iceQueue.length > 0) {
           await peer.addIceCandidate(iceQueue.shift());
         }
       } else if (msg.ice) {
         if (isRemoteDescSet) {
           await peer.addIceCandidate(msg.ice);
-          console.log('[ICE] Применён ICE-кандидат');
         } else {
           iceQueue.push(msg.ice);
-          console.log('[ICE] ICE-кандидат в очереди');
         }
       }
     };
 
-    // Получение медиа и предложение
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(async (stream) => {
+    peer.onicecandidate = e => {
+      if (e.candidate) {
+        socket.send(JSON.stringify({ ice: e.candidate }));
+      }
+    };
+
+    peer.ontrack = e => {
+      if (remoteVideo.srcObject !== e.streams[0]) {
+        remoteVideo.srcObject = e.streams[0];
+      }
+    };
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
       localVideo.srcObject = stream;
       stream.getTracks().forEach(track => peer.addTrack(track, stream));
-      console.log('[MEDIA] Получен локальный поток');
 
-      socket.addEventListener('open', async () => {
-        isOfferer = true;
-        if (isOfferer) {
-          const offer = await peer.createOffer();
-          await peer.setLocalDescription(offer);
-          socket.send(JSON.stringify({ offer }));
-          console.log('[RTC] Отправлен offer');
+      const tryToOffer = () => {
+        if (socket.readyState === WebSocket.OPEN && isOfferer) {
+          peer.createOffer().then(offer => {
+            return peer.setLocalDescription(offer);
+          }).then(() => {
+            socket.send(JSON.stringify({ offer: peer.localDescription }));
+          });
+        } else {
+          setTimeout(tryToOffer, 500);
         }
-      });
-    });
+      };
 
-    peer.addEventListener('iceconnectionstatechange', () => {
-      console.log('[ICE] Статус:', peer.iceConnectionState);
+      tryToOffer();
+    }).catch(err => {
+      console.error('Ошибка доступа к камере/микрофону:', err);
     });
   </script>
 </body>
