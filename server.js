@@ -6,30 +6,27 @@ const path = require('path');
 const server = http.createServer((req, res) => {
   const filePath = path.join(__dirname, 'public', 'index.html');
   fs.readFile(filePath, (err, content) => {
-    if (err) return res.end('Error');
+    if (err) {
+      res.writeHead(500);
+      return res.end('Error loading page');
+    }
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(content);
   });
 });
 
 const wss = new WebSocket.Server({ server });
-let clients = [];
 
-let lastMessage = null;
+let clients = [];
 
 wss.on('connection', ws => {
   clients.push(ws);
   console.log('[WS] Новый клиент подключён');
 
-  // При новом подключении сразу отправляем последнее сообщение (offer/answer)
-  if (lastMessage) {
-    console.log('[WS] Отправка кэшированного сообщения:', lastMessage);
-    ws.send(lastMessage);
-  }
-
   ws.on('message', msg => {
     console.log('[WS] Получено сообщение:', msg);
-    lastMessage = msg; // сохраняем последнее сообщение
+
+    // Рассылаем всем КРОМЕ отправителя
     clients.forEach(client => {
       if (client !== ws && client.readyState === WebSocket.OPEN) {
         client.send(msg);
